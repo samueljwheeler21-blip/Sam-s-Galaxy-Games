@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tango</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0e0e12;
+  --surface: #17171f;
+  --surface2: #1f1f2a;
+  --border: #2e2e3e;
+  --sun: #f5c542;
+  --sun-glow: rgba(245,197,66,0.22);
+  --moon: #7eb8f7;
+  --moon-glow: rgba(126,184,247,0.22);
+  --text: #e8e8f0;
+  --text-dim: #6b6b80;
+  --accent: #c084fc;
+  --eq-color: #34d399;
+  --neq-color: #f87171;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 12px 40px;
+  overflow-x: hidden;
+}
+
+header { text-align: center; margin-bottom: 20px; animation: fadeDown .6s ease both; }
+
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  background: linear-gradient(135deg, #f5c542 20%, #c084fc 80%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 2px;
+}
+
+.subtitle { font-size: .7rem; letter-spacing: .25em; text-transform: uppercase; color: var(--text-dim); }
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: fadeDown .6s .1s ease both;
+}
+
+.tab-group {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tab {
+  padding: 7px 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all .2s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { background: var(--surface2); color: var(--text); }
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all .18s;
+}
+.btn:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #a855f7; }
+
+.stats { display: flex; gap: 24px; margin-bottom: 16px; animation: fadeDown .6s .15s ease both; }
+.stat { text-align: center; }
+.stat-val { font-size: 1.2rem; font-weight: 500; }
+.stat-lbl { font-size: .6rem; letter-spacing: .18em; text-transform: uppercase; color: var(--text-dim); margin-top: 1px; }
+
+/* The puzzle area */
+#puzzle-area {
+  position: relative;
+  display: inline-block;
+  animation: fadeUp .5s .2s ease both;
+}
+
+/* The grid itself — all sizing set by JS */
+#grid {
+  display: grid;
+  position: relative;
+}
+
+/* Cells — size set by JS inline style */
+.cell {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, border-color .15s, transform .1s;
+  position: relative;
+}
+.cell:hover:not(.fixed) { border-color: var(--accent); background: var(--surface2); }
+.cell:active:not(.fixed) { transform: scale(.93); }
+.cell.fixed { cursor: default; background: #1c1c26; border-color: #383848; }
+.cell.sun  { border-color: var(--sun);  box-shadow: 0 0 12px var(--sun-glow); }
+.cell.moon { border-color: var(--moon); box-shadow: 0 0 12px var(--moon-glow); }
+.cell.conflict { border-color: var(--neq-color) !important; background: rgba(248,113,113,.08) !important; animation: shake .3s ease; }
+.cell.hint-hl  { animation: pulse-hint .8s ease 3; }
+.cell.won { animation: win-glow 1.2s ease infinite; }
+.cell-pop { animation: pop .22s ease both; }
+
+/* Clue badges — absolutely positioned relative to #puzzle-area */
+.clue {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: 'DM Mono', monospace;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 10;
+}
+.clue.eq  { background: var(--eq-color);  color: #0d1f18; box-shadow: 0 0 6px rgba(52,211,153,.5); }
+.clue.neq { background: var(--neq-color); color: #1f0d0d; box-shadow: 0 0 6px rgba(248,113,113,.5); }
+
+#message {
+  margin-top: 14px;
+  min-height: 24px;
+  max-width: 520px;
+  font-size: .8rem;
+  letter-spacing: .03em;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-align: center;
+  transition: color .3s;
+}
+#message.hint-msg {
+  color: var(--accent);
+  background: rgba(192,132,252,0.07);
+  border: 1px solid rgba(192,132,252,0.2);
+  border-radius: 10px;
+  padding: 10px 16px;
+}
+
+.legend {
+  display: flex; gap: 16px; margin-top: 16px;
+  font-size: .65rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-dim); flex-wrap: wrap; justify-content: center;
+  animation: fadeUp .5s .3s ease both;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .6rem; font-weight: 700;
+}
+
+.rules {
+  margin-top: 18px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 18px;
+  max-width: 460px; font-size: .7rem; line-height: 1.7;
+  color: var(--text-dim); animation: fadeUp .5s .35s ease both;
+}
+.rules h3 {
+  font-family: 'Playfair Display', serif; font-size: .88rem;
+  color: var(--text); margin-bottom: 6px; font-weight: 400;
+}
+
+/* Win overlay */
+.win-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(14,14,18,.85); backdrop-filter: blur(6px);
+  z-index: 100; align-items: center; justify-content: center;
+}
+.win-overlay.show { display: flex; animation: fadeDown .4s ease; }
+.win-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 36px 44px; text-align: center; max-width: 320px;
+}
+.win-emoji { font-size: 3rem; margin-bottom: 10px; }
+.win-title {
+  font-family: 'Playfair Display', serif; font-size: 1.9rem;
+  background: linear-gradient(135deg,#f5c542,#c084fc);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin-bottom: 6px;
+}
+.win-stats { color: var(--text-dim); font-size: .76rem; letter-spacing: .08em; margin-bottom: 18px; line-height: 1.8; }
+
+@keyframes fadeDown { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeUp   { from{opacity:0;transform:translateY(12px)}  to{opacity:1;transform:translateY(0)} }
+@keyframes shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+@keyframes pop      { 0%{transform:scale(.7);opacity:0} 60%{transform:scale(1.2)} 100%{transform:scale(1);opacity:1} }
+@keyframes pulse-hint { 0%,100%{box-shadow:0 0 0 0 rgba(192,132,252,.5)} 50%{box-shadow:0 0 0 8px rgba(192,132,252,0)} }
+@keyframes win-glow { 0%,100%{box-shadow:0 0 16px var(--sun-glow)} 50%{box-shadow:0 0 36px rgba(245,197,66,.4)} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TANGO</h1>
+  <div class="subtitle">Sun · Moon · Logic</div>
+</header>
+
+<div class="controls">
+  <div class="tab-group" id="sizeTabs">
+    <button class="tab" data-size="4">4×4</button>
+    <button class="tab active" data-size="6">6×6</button>
+    <button class="tab" data-size="8">8×8</button>
+    <button class="tab" data-size="16">16×16</button>
+  </div>
+  <div class="tab-group" id="diffTabs">
+    <button class="tab" data-diff="easy">Easy</button>
+    <button class="tab active" data-diff="medium">Medium</button>
+    <button class="tab" data-diff="hard">Hard</button>
+    <button class="tab" data-diff="extreme">Extreme</button>
+  </div>
+  <button class="btn primary" id="newBtn">New</button>
+  <button class="btn" id="resetBtn">Reset</button>
+  <button class="btn" id="hintBtn">Hint</button>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-val" id="timerVal">0:00</div><div class="stat-lbl">Time</div></div>
+  <div class="stat"><div class="stat-val" id="movesVal">0</div><div class="stat-lbl">Moves</div></div>
+  <div class="stat"><div class="stat-val" id="errorsVal">0</div><div class="stat-lbl">Errors</div></div>
+</div>
+
+<div id="puzzle-area">
+  <div id="grid"></div>
+</div>
+
+<div id="message">Click a cell to place ☀️ or 🌙</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot eq">=</div> Same symbol</div>
+  <div class="legend-item"><div class="legend-dot neq">×</div> Different symbol</div>
+  <div class="legend-item">Half ☀️ half 🌙 per row & col</div>
+</div>
+
+<div class="rules">
+  <h3>How to play</h3>
+  Fill every cell with ☀️ or 🌙 so each row and column has exactly half of each.
+  No more than 2 identical symbols may appear consecutively.
+  <span style="color:var(--eq-color)">=</span> means two adjacent cells must match;
+  <span style="color:var(--neq-color)">×</span> means they must differ.
+  Click once for ☀️, again for 🌙, again to clear.
+</div>
+
+<div class="win-overlay" id="winOverlay">
+  <div class="win-card">
+    <div class="win-emoji">✨</div>
+    <div class="win-title">Solved!</div>
+    <div class="win-stats" id="winStats"></div>
+    <button class="btn primary" style="width:100%" id="winNewBtn">New Puzzle →</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let N = 6;           // board size (4 / 6 / 8 / 16)
+let DIFF = 'medium'; // difficulty
+let solution = [];   // N×N solved grid (0=sun, 1=moon)
+let puzzle   = [];   // N×N with -1 for blanks
+let board    = [];   // N×N current player state
+let clues    = {};   // { "r,c,right": "=" | "×", "r,c,down": ... }
+let moves = 0, errors = 0;
+let timerStart = 0, timerInterval = null;
+let pendingTimeout = null;
+
+// Layout vars (computed once per newGame)
+let CELL, GAP, BADGE;
+
+// ═══════════════════════════════════════════════════
+//  TABS & BUTTONS
+// ═══════════════════════════════════════════════════
+document.querySelectorAll('#sizeTabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#sizeTabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    N = parseInt(btn.dataset.size);
+    startNewGame();
+  });
+});
+document.querySelectorAll('#diffTabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#diffTabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    DIFF = btn.dataset.diff;
+    startNewGame();
+  });
+});
+document.getElementById('newBtn').addEventListener('click', startNewGame);
+document.getElementById('resetBtn').addEventListener('click', resetGame);
+document.getElementById('hintBtn').addEventListener('click', giveHint);
+document.getElementById('winNewBtn').addEventListener('click', () => {
+  document.getElementById('winOverlay').classList.remove('show');
+  startNewGame();
+});
+
+// ═══════════════════════════════════════════════════
+//  LAYOUT
+// ═══════════════════════════════════════════════════
+function computeLayout(n) {
+  const maxW = Math.min(window.innerWidth - 32, 720);
+  GAP  = n >= 12 ? 2 : n >= 8 ? 3 : 5;
+  CELL = Math.floor((maxW - (n - 1) * GAP) / n);
+  CELL = Math.max(24, Math.min(90, CELL));
+  BADGE = Math.max(12, Math.min(20, Math.round(CELL * 0.28)));
+}
+
+// ═══════════════════════════════════════════════════
+//  TIMER
+// ═══════════════════════════════════════════════════
+function startTimer() {
+  timerStart = Date.now();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - timerStart) / 1000);
+    document.getElementById('timerVal').textContent =
+      Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }, 500);
+}
+function stopTimer() { clearInterval(timerInterval); }
+function elapsedStr() {
+  const s = Math.floor((Date.now() - timerStart) / 1000);
+  return Math.floor(s / 60) > 0 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+}
+
+// ═══════════════════════════════════════════════════
+//  SOLUTION GENERATOR
+// ═══════════════════════════════════════════════════
+function generateSolution(n) {
+  const g = Array.from({ length: n }, () => Array(n).fill(-1));
+
+  function canPlace(r, c, v) {
+    // No three in a row horizontally (look left only — cells to right not placed yet)
+    if (c >= 2 && g[r][c-1] === v && g[r][c-2] === v) return false;
+    // No three in a row vertically (look up only)
+    if (r >= 2 && g[r-1][c] === v && g[r-2][c] === v) return false;
+    // Count already-placed values in this row (cols 0..c-1)
+    let rowCount = 0;
+    for (let i = 0; i < c; i++) if (g[r][i] === v) rowCount++;
+    if (rowCount >= n / 2) return false;
+    // Count already-placed values in this col (rows 0..r-1)
+    let colCount = 0;
+    for (let i = 0; i < r; i++) if (g[i][c] === v) colCount++;
+    if (colCount >= n / 2) return false;
+    return true;
+  }
+
+  function bt(pos) {
+    if (pos === n * n) return true;
+    const r = Math.floor(pos / n), c = pos % n;
+    const order = Math.random() < 0.5 ? [0, 1] : [1, 0];
+    for (const v of order) {
+      if (canPlace(r, c, v)) {
+        g[r][c] = v;
+        if (bt(pos + 1)) return true;
+        g[r][c] = -1;
+      }
+    }
+    return false;
+  }
+  bt(0);
+  return g;
+}
+
+// ═══════════════════════════════════════════════════
+//  CONSISTENCY CHECK (for solver)
+// ═══════════════════════════════════════════════════
+function isOK(g, n, cl) {
+  for (let i = 0; i < n; i++) {
+    let rs = 0, rm = 0, cs = 0, cm = 0;
+    for (let j = 0; j < n; j++) {
+      if (g[i][j] === 0) rs++; else if (g[i][j] === 1) rm++;
+      if (g[j][i] === 0) cs++; else if (g[j][i] === 1) cm++;
+    }
+    if (rs > n/2 || rm > n/2 || cs > n/2 || cm > n/2) return false;
+    for (let j = 0; j < n - 2; j++) {
+      if (g[i][j] !== -1 && g[i][j] === g[i][j+1] && g[i][j] === g[i][j+2]) return false;
+      if (g[j][i] !== -1 && g[j][i] === g[j+1][i] && g[j][i] === g[j+2][i]) return false;
+    }
+  }
+  for (const [k, t] of Object.entries(cl)) {
+    const p = k.split(','); const r = +p[0], c = +p[1], dir = p[2];
+    const a = g[r][c], b = dir === 'right' ? g[r][c+1] : g[r+1][c];
+    if (a === -1 || b === -1) continue;
+    if (t === '=' && a !== b) return false;
+    if (t === '×' && a === b) return false;
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════
+//  COUNT SOLUTIONS  (max 2, with deadline)
+// ═══════════════════════════════════════════════════
+function countSols(puz, n, cl, limit, deadlineMs) {
+  let count = 0;
+  const deadline = Date.now() + deadlineMs;
+  const empties = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++)
+      if (puz[r][c] === -1) empties.push([r, c]);
+
+  const g = puz.map(row => row.slice());
+
+  function solve(idx) {
+    if (count >= limit || Date.now() > deadline) return;
+    if (idx === empties.length) { count++; return; }
+    const [r, c] = empties[idx];
+    for (const v of [0, 1]) {
+      g[r][c] = v;
+      if (isOK(g, n, cl)) solve(idx + 1);
+      g[r][c] = -1;
+    }
+  }
+  solve(0);
+  return count;
+}
+
+// ═══════════════════════════════════════════════════
+//  CLUE BUILDER
+// ═══════════════════════════════════════════════════
+function buildAllClues(sol, puz, n) {
+  // Return ALL possible clues between adjacent empty pairs
+  const cl = {};
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (c < n-1 && puz[r][c] === -1 && puz[r][c+1] === -1)
+        cl[`${r},${c},right`] = sol[r][c] === sol[r][c+1] ? '=' : '×';
+      if (r < n-1 && puz[r][c] === -1 && puz[r+1][c] === -1)
+        cl[`${r},${c},down`]  = sol[r][c] === sol[r+1][c] ? '=' : '×';
+    }
+  }
+  return cl;
+}
+
+// ═══════════════════════════════════════════════════
+//  PUZZLE GENERATOR
+// ═══════════════════════════════════════════════════
+function generatePuzzle(sol, n, diff) {
+  const total = n * n;
+  // What fraction of cells to leave as GIVEN (revealed)
+  const revealFrac = { easy: 0.55, medium: 0.30, hard: 0.16, extreme: 0.08 }[diff];
+  const targetRevealed = Math.max(n, Math.round(total * revealFrac));
+  const targetEmpty    = total - targetRevealed;
+
+  // Time budget for uniqueness checks (ms) — smaller for large grids
+  const budget = n >= 16 ? 80 : n >= 8 ? 200 : 800;
+
+  // Start with full solution revealed, then remove cells one by one
+  const puz = sol.map(row => row.slice());
+  const positions = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++)
+      positions.push([r, c]);
+  // Shuffle
+  for (let i = positions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [positions[i], positions[j]] = [positions[j], positions[i]];
+  }
+
+  let removed = 0;
+  for (const [r, c] of positions) {
+    if (removed >= targetEmpty) break;
+    const backup = puz[r][c];
+    puz[r][c] = -1;
+    const cl = buildAllClues(sol, puz, n);
+    if (countSols(puz, n, cl, 2, budget) === 1) {
+      removed++;
+    } else {
+      puz[r][c] = backup; // put it back
+    }
+  }
+
+  // Build final clue set — start full, then strip clues while still unique
+  let cl = buildAllClues(sol, puz, n);
+
+  // Strip clues to increase difficulty (harder = fewer clues)
+  const keepFrac = { easy: 0.9, medium: 0.6, hard: 0.35, extreme: 0.15 }[diff];
+  const clKeys = Object.keys(cl).sort(() => Math.random() - 0.5);
+  for (const k of clKeys) {
+    if (Math.random() < keepFrac) continue; // keep this one
+    const saved = cl[k];
+    delete cl[k];
+    if (countSols(puz, n, cl, 2, budget) !== 1) {
+      cl[k] = saved; // needed for uniqueness, put back
+    }
+  }
+
+  return { puz, clues: cl };
+}
+
+// ═══════════════════════════════════════════════════
+//  CONFLICT DETECTION
+// ═══════════════════════════════════════════════════
+function getConflicts() {
+  const bad = new Set();
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      if (board[r][c] === -1) continue;
+      const v = board[r][c];
+      // Horizontal triple
+      if (c >= 2 && board[r][c-1] === v && board[r][c-2] === v)
+        [c, c-1, c-2].forEach(x => bad.add(`${r},${x}`));
+      if (c <= N-3 && board[r][c+1] === v && board[r][c+2] === v)
+        [c, c+1, c+2].forEach(x => bad.add(`${r},${x}`));
+      // Vertical triple
+      if (r >= 2 && board[r-1][c] === v && board[r-2][c] === v)
+        [r, r-1, r-2].forEach(x => bad.add(`${x},${c}`));
+      if (r <= N-3 && board[r+1][c] === v && board[r+2][c] === v)
+        [r, r+1, r+2].forEach(x => bad.add(`${x},${c}`));
+      // Row/col count
+      let rc = 0, cc = 0;
+      for (let i = 0; i < N; i++) { if (board[r][i] === v) rc++; if (board[i][c] === v) cc++; }
+      if (rc > N/2 || cc > N/2) bad.add(`${r},${c}`);
+    }
+  }
+  // Clue violations
+  for (const [k, t] of Object.entries(clues)) {
+    const p = k.split(','); const r = +p[0], c = +p[1], dir = p[2];
+    const r2 = dir === 'right' ? r : r+1, c2 = dir === 'right' ? c+1 : c;
+    const a = board[r][c], b = board[r2][c2];
+    if (a !== -1 && b !== -1) {
+      if (t === '=' && a !== b) { bad.add(`${r},${c}`); bad.add(`${r2},${c2}`); }
+      if (t === '×' && a === b) { bad.add(`${r},${c}`); bad.add(`${r2},${c2}`); }
+    }
+  }
+  return bad;
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════
+function renderBoard() {
+  const bad = getConflicts();
+  document.querySelectorAll('.cell').forEach(cell => {
+    const r = +cell.dataset.r, c = +cell.dataset.c;
+    const v = board[r][c];
+    cell.classList.remove('sun', 'moon', 'conflict');
+    cell.textContent = v === 0 ? '☀️' : v === 1 ? '🌙' : '';
+    if (v === 0) cell.classList.add('sun');
+    if (v === 1) cell.classList.add('moon');
+    if (bad.has(`${r},${c}`)) cell.classList.add('conflict');
+  });
+}
+
+function renderClues() {
+  // Remove old badges
+  document.querySelectorAll('.clue').forEach(e => e.remove());
+  const area = document.getElementById('puzzle-area');
+  const step = CELL + GAP;
+  const half = Math.round(BADGE / 2);
+
+  for (const [k, t] of Object.entries(clues)) {
+    const p = k.split(','); const r = +p[0], c = +p[1], dir = p[2];
+    const el = document.createElement('div');
+    el.className = 'clue ' + (t === '=' ? 'eq' : 'neq');
+    el.textContent = t;
+    el.style.width  = BADGE + 'px';
+    el.style.height = BADGE + 'px';
+    el.style.fontSize = Math.max(8, BADGE - 6) + 'px';
+    if (dir === 'right') {
+      el.style.top  = (r * step + CELL / 2 - half) + 'px';
+      el.style.left = (c * step + CELL + GAP / 2 - half) + 'px';
+    } else {
+      el.style.top  = (r * step + CELL + GAP / 2 - half) + 'px';
+      el.style.left = (c * step + CELL / 2 - half) + 'px';
+    }
+    area.appendChild(el);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  BUILD DOM GRID
+// ═══════════════════════════════════════════════════
+function buildGrid() {
+  const gridEl = document.getElementById('grid');
+  const area   = document.getElementById('puzzle-area');
+
+  // Clear old cells and clues
+  gridEl.innerHTML = '';
+  document.querySelectorAll('.clue').forEach(e => e.remove());
+
+  // Set grid CSS
+  const step  = CELL + GAP;
+  const total = N * step - GAP;
+  gridEl.style.gridTemplateColumns = `repeat(${N}, ${CELL}px)`;
+  gridEl.style.gridTemplateRows    = `repeat(${N}, ${CELL}px)`;
+  gridEl.style.gap = `${GAP}px`;
+  gridEl.style.width  = total + 'px';
+  gridEl.style.height = total + 'px';
+  area.style.width  = total + 'px';
+  area.style.height = total + 'px';
+
+  const fontSize = Math.max(10, Math.round(CELL * 0.52)) + 'px';
+  const radius   = Math.max(4, Math.round(CELL * 0.15)) + 'px';
+
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+      cell.style.width      = CELL + 'px';
+      cell.style.height     = CELL + 'px';
+      cell.style.fontSize   = fontSize;
+      cell.style.borderRadius = radius;
+      if (puzzle[r][c] !== -1) cell.classList.add('fixed');
+      cell.addEventListener('click', () => onCellClick(r, c));
+      gridEl.appendChild(cell);
+    }
+  }
+
+  renderBoard();
+  renderClues();
+}
+
+// ═══════════════════════════════════════════════════
+//  INTERACTION
+// ═══════════════════════════════════════════════════
+function onCellClick(r, c) {
+  if (puzzle[r][c] !== -1) return;
+  document.getElementById('message').classList.remove('hint-msg');
+  const prev = board[r][c];
+  board[r][c] = prev === -1 ? 0 : prev === 0 ? 1 : -1;
+
+  moves++;
+  document.getElementById('movesVal').textContent = moves;
+
+  // Count error only when erasing a symbol that was conflicting
+  if (board[r][c] === -1 && prev !== -1) {
+    const tmp = board[r][c];
+    board[r][c] = prev;
+    if (getConflicts().has(`${r},${c}`)) {
+      errors++;
+      document.getElementById('errorsVal').textContent = errors;
+    }
+    board[r][c] = tmp;
+  }
+
+  // Pop animation
+  const idx = r * N + c;
+  const cellEl = document.querySelectorAll('.cell')[idx];
+  if (cellEl) {
+    cellEl.classList.remove('cell-pop');
+    void cellEl.offsetWidth;
+    cellEl.classList.add('cell-pop');
+  }
+
+  renderBoard();
+  checkWin();
+}
+
+function checkWin() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (board[r][c] !== solution[r][c]) return;
+  stopTimer();
+  document.querySelectorAll('.cell').forEach(el => el.classList.add('won'));
+  document.getElementById('winStats').innerHTML =
+    `Time: ${elapsedStr()}<br>Moves: ${moves} · Errors: ${errors}`;
+  setTimeout(() => document.getElementById('winOverlay').classList.add('show'), 700);
+}
+
+// ── Hint logic explainer ──
+// Tries each deduction rule in order and returns the first that forces a value.
+function findForcedCell() {
+  const SYM = ['☀️', '🌙'];
+  const NAME = ['sun', 'moon'];
+
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      if (board[r][c] !== -1) continue;
+      const val = solution[r][c];
+      const other = 1 - val;
+      const sym = SYM[val], otherSym = SYM[other];
+
+      // ── Rule 1: Two identical neighbours force the opposite ──
+      // Horizontal: [val][val][?] or [?][val][val]
+      if (c >= 2 && board[r][c-1] === other && board[r][c-2] === other)
+        return { r, c, val, reason: `Two ${SYM[other]}s to the left in row ${r+1} mean a third would violate the no-three rule, so this must be ${sym}.` };
+      if (c <= N-3 && board[r][c+1] === other && board[r][c+2] === other)
+        return { r, c, val, reason: `Two ${SYM[other]}s to the right in row ${r+1} mean a third would violate the no-three rule, so this must be ${sym}.` };
+      if (c >= 1 && c <= N-2 && board[r][c-1] === other && board[r][c+1] === other)
+        return { r, c, val, reason: `This cell is sandwiched between two ${SYM[other]}s in row ${r+1}, so it must be ${sym} to avoid three in a row.` };
+      // Vertical
+      if (r >= 2 && board[r-1][c] === other && board[r-2][c] === other)
+        return { r, c, val, reason: `Two ${SYM[other]}s above in column ${c+1} mean a third would violate the no-three rule, so this must be ${sym}.` };
+      if (r <= N-3 && board[r+1][c] === other && board[r+2][c] === other)
+        return { r, c, val, reason: `Two ${SYM[other]}s below in column ${c+1} mean a third would violate the no-three rule, so this must be ${sym}.` };
+      if (r >= 1 && r <= N-2 && board[r-1][c] === other && board[r+1][c] === other)
+        return { r, c, val, reason: `This cell is sandwiched between two ${SYM[other]}s in column ${c+1}, so it must be ${sym} to avoid three in a row.` };
+
+      // ── Rule 2: Row/column is already at half-capacity for the other symbol ──
+      const rowOther = board[r].filter(v => v === other).length;
+      const remaining = board[r].filter(v => v === -1).length;
+      if (rowOther === N/2)
+        return { r, c, val, reason: `Row ${r+1} already has ${N/2} ${SYM[other]}s (the maximum), so all remaining cells including this one must be ${sym}.` };
+      const colOther = board.map(row => row[c]).filter(v => v === other).length;
+      if (colOther === N/2)
+        return { r, c, val, reason: `Column ${c+1} already has ${N/2} ${SYM[other]}s (the maximum), so all remaining cells including this one must be ${sym}.` };
+
+      // ── Rule 3: Clue constraint with a known neighbour ──
+      // Right neighbour
+      if (c < N-1 && board[r][c+1] !== -1) {
+        const neighbourVal = board[r][c+1];
+        const key = `${r},${c},right`;
+        if (clues[key] === '=' && neighbourVal !== -1)
+          return { r, c, val, reason: `The = clue between this cell and (${r+1},${c+2}) means they must match. (${r+1},${c+2}) is ${SYM[neighbourVal]}, so this must also be ${sym}.` };
+        if (clues[key] === '×' && neighbourVal !== -1)
+          return { r, c, val, reason: `The × clue between this cell and (${r+1},${c+2}) means they must differ. (${r+1},${c+2}) is ${SYM[neighbourVal]}, so this must be ${sym}.` };
+      }
+      // Left neighbour
+      if (c > 0 && board[r][c-1] !== -1) {
+        const neighbourVal = board[r][c-1];
+        const key = `${r},${c-1},right`;
+        if (clues[key] === '=' && neighbourVal !== -1)
+          return { r, c, val, reason: `The = clue between (${r+1},${c}) and this cell means they must match. (${r+1},${c}) is ${SYM[neighbourVal]}, so this must also be ${sym}.` };
+        if (clues[key] === '×' && neighbourVal !== -1)
+          return { r, c, val, reason: `The × clue between (${r+1},${c}) and this cell means they must differ. (${r+1},${c}) is ${SYM[neighbourVal]}, so this must be ${sym}.` };
+      }
+      // Below neighbour
+      if (r < N-1 && board[r+1][c] !== -1) {
+        const neighbourVal = board[r+1][c];
+        const key = `${r},${c},down`;
+        if (clues[key] === '=' && neighbourVal !== -1)
+          return { r, c, val, reason: `The = clue between this cell and (${r+2},${c+1}) means they must match. (${r+2},${c+1}) is ${SYM[neighbourVal]}, so this must also be ${sym}.` };
+        if (clues[key] === '×' && neighbourVal !== -1)
+          return { r, c, val, reason: `The × clue between this cell and (${r+2},${c+1}) means they must differ. (${r+2},${c+1}) is ${SYM[neighbourVal]}, so this must be ${sym}.` };
+      }
+      // Above neighbour
+      if (r > 0 && board[r-1][c] !== -1) {
+        const neighbourVal = board[r-1][c];
+        const key = `${r-1},${c},down`;
+        if (clues[key] === '=' && neighbourVal !== -1)
+          return { r, c, val, reason: `The = clue between (${r},${c+1}) and this cell means they must match. (${r},${c+1}) is ${SYM[neighbourVal]}, so this must also be ${sym}.` };
+        if (clues[key] === '×' && neighbourVal !== -1)
+          return { r, c, val, reason: `The × clue between (${r},${c+1}) and this cell means they must differ. (${r},${c+1}) is ${SYM[neighbourVal]}, so this must be ${sym}.` };
+      }
+
+      // ── Rule 4: Only one value is consistent with all constraints ──
+      // Try placing the other value — if it immediately violates something, this value is forced
+      const testBoard = board.map(row => row.slice());
+      testBoard[r][c] = other;
+      if (!isOK(testBoard, N, clues))
+        return { r, c, val, reason: `Placing ${otherSym} here would immediately break a rule (no-three, balance, or a clue), so this must be ${sym}.` };
+    }
+  }
+
+  // Fallback: no simple logical reason found — just return a random empty cell
+  const empties = [];
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (board[r][c] === -1) empties.push([r, c]);
+  if (!empties.length) return null;
+  const [r, c] = empties[Math.floor(Math.random() * empties.length)];
+  const val = solution[r][c];
+  return { r, c, val, reason: `This is a good cell to fill in. Based on the overall puzzle constraints, this must be ${SYM[val]}.` };
+}
+
+function giveHint() {
+  const hint = findForcedCell();
+  if (!hint) return;
+  const { r, c, val, reason } = hint;
+
+  board[r][c] = val;
+
+  const cellEl = document.querySelectorAll('.cell')[r * N + c];
+  if (cellEl) {
+    cellEl.classList.add('hint-hl');
+    setTimeout(() => cellEl.classList.remove('hint-hl'), 3000);
+  }
+
+  const msgEl = document.getElementById('message');
+  msgEl.textContent = `💡 ${reason}`;
+  msgEl.classList.add('hint-msg');
+  renderBoard();
+  checkWin();
+}
+
+function resetGame() {
+  if (!puzzle.length) return;
+  board = puzzle.map(row => row.slice());
+  moves = 0; errors = 0;
+  document.getElementById('movesVal').textContent = 0;
+  document.getElementById('errorsVal').textContent = 0;
+  document.getElementById('message').textContent = 'Click a cell to place ☀️ or 🌙';
+  startTimer();
+  renderBoard();
+}
+
+// ═══════════════════════════════════════════════════
+//  NEW GAME  — synchronous generation (no setTimeout race)
+// ═══════════════════════════════════════════════════
+function startNewGame() {
+  stopTimer();
+  if (pendingTimeout) { clearTimeout(pendingTimeout); pendingTimeout = null; }
+  document.getElementById('winOverlay').classList.remove('show');
+  moves = 0; errors = 0;
+  document.getElementById('movesVal').textContent = 0;
+  document.getElementById('errorsVal').textContent = 0;
+  document.getElementById('timerVal').textContent = '—:——';
+  document.getElementById('message').textContent = '⏳ Generating…';
+
+  // Snapshot current N so async paint flush doesn't race
+  const n = N;
+
+  // Let the browser paint the "Generating…" message, then generate
+  pendingTimeout = setTimeout(() => {
+    pendingTimeout = null;
+
+    computeLayout(n);
+
+    solution = generateSolution(n);
+    const result = generatePuzzle(solution, n, DIFF);
+    puzzle = result.puz;
+    clues  = result.clues;
+    board  = puzzle.map(row => row.slice());
+
+    buildGrid();
+    startTimer();
+    document.getElementById('message').textContent = 'Click a cell to place ☀️ or 🌙';
+  }, 30);
+}
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+startNewGame();
+</script>
+</body>
+</html>

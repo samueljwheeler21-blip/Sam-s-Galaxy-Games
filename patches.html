@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patches</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#1a1a2e;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem;}
+#app{padding:1rem 0;max-width:420px;width:100%;margin:0 auto;}
+#hint{font-size:12px;color:#888;text-align:center;margin-bottom:.5rem;line-height:1.5;}
+#grid-wrap{display:flex;justify-content:center;margin-bottom:.75rem;}
+canvas{display:block;border-radius:10px;touch-action:none;cursor:crosshair;}
+#counters{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:.65rem;}
+.ct{font-size:12px;font-weight:600;padding:3px 11px;border-radius:20px;}
+#btns{display:flex;gap:8px;justify-content:center;margin-bottom:.6rem;}
+button{font-size:13px;padding:6px 14px;border-radius:8px;border:1px solid #333;background:#16162a;color:#e8e8ff;cursor:pointer;}
+button:hover{background:#1f1f3a;}
+#msg{text-align:center;font-size:13px;min-height:18px;color:#888;}
+#win{display:none;margin-top:.5rem;text-align:center;padding:12px;background:#16162a;border-radius:12px;border:1px solid #2e2e4e;}
+#win b{display:block;font-size:15px;margin-bottom:8px;color:#e8e8ff;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hint">Click any colored cell and drag to move that corner of its rectangle. Opposite corner stays fixed. Drag multiple times to expand in all directions.</div>
+  <div id="grid-wrap"><canvas id="cv"></canvas></div>
+  <div id="counters"></div>
+  <div id="btns">
+    <button onclick="newPuzzle()">New</button>
+    <button onclick="clearAll()">Clear</button>
+    <button onclick="doCheck()">Check</button>
+    <button onclick="doReveal()">Reveal</button>
+  </div>
+  <div id="msg"></div>
+  <div id="win"><b>Puzzle complete!</b><button onclick="newPuzzle()">Play again</button></div>
+</div>
+<script>
+const CELL=58,GAP=4,PAD=6;
+const PALETTE=[
+  {bg:'#e8453c',border:'#a02020',txt:'#fff'},
+  {bg:'#2e86de',border:'#1a5fa0',txt:'#fff'},
+  {bg:'#27ae60',border:'#177040',txt:'#fff'},
+  {bg:'#f39c12',border:'#a06000',txt:'#fff'},
+  {bg:'#8e44ad',border:'#5a1e7a',txt:'#fff'},
+  {bg:'#16a085',border:'#0a6050',txt:'#fff'},
+  {bg:'#e67e22',border:'#9a4a00',txt:'#fff'},
+  {bg:'#c0392b',border:'#7a1010',txt:'#fff'},
+];
+const PUZZLES=[
+  {N:6,colors:[{ci:0,n:4,s:[0,0]},{ci:1,n:6,s:[0,2]},{ci:2,n:6,s:[0,5]},{ci:3,n:8,s:[3,1]},{ci:4,n:6,s:[3,4]},{ci:5,n:6,s:[5,0]}],sol:[[0,0,1,1,1,2],[0,0,1,1,1,2],[3,3,3,3,1,2],[3,3,3,3,4,2],[5,5,3,3,4,4],[5,5,5,5,4,4]]},
+  {N:6,colors:[{ci:0,n:6,s:[0,0]},{ci:1,n:4,s:[0,3]},{ci:2,n:3,s:[0,5]},{ci:3,n:9,s:[2,2]},{ci:4,n:8,s:[4,0]},{ci:5,n:6,s:[3,4]}],sol:[[0,0,0,1,1,2],[0,0,0,1,1,2],[0,0,3,3,3,2],[4,4,3,3,5,5],[4,4,3,3,5,5],[4,4,4,4,5,5]]},
+  {N:7,colors:[{ci:0,n:6,s:[0,0]},{ci:1,n:8,s:[0,3]},{ci:2,n:6,s:[0,6]},{ci:3,n:9,s:[4,0]},{ci:4,n:4,s:[2,4]},{ci:5,n:8,s:[4,4]},{ci:6,n:8,s:[6,2]}],sol:[[0,0,1,1,1,1,2],[0,0,1,1,1,1,2],[0,0,4,4,4,1,2],[3,3,4,4,5,5,2],[3,3,3,3,5,5,5],[3,3,3,6,5,5,5],[3,6,6,6,6,5,5]]},
+  {N:7,colors:[{ci:0,n:9,s:[1,1]},{ci:1,n:6,s:[0,4]},{ci:2,n:4,s:[3,3]},{ci:3,n:6,s:[0,6]},{ci:4,n:8,s:[5,0]},{ci:5,n:6,s:[3,5]},{ci:6,n:10,s:[5,4]}],sol:[[0,0,0,1,1,3,3],[0,0,0,1,1,3,3],[0,0,0,2,2,3,3],[4,4,4,2,2,5,5],[4,4,4,6,6,5,5],[4,4,4,6,6,5,5],[4,6,6,6,6,5,5]]},
+];
+let P,N,rects,drag,cv,ctx;
+function init(){rects={};P.colors.forEach(({ci,s})=>{rects[ci]={r1:s[0],c1:s[1],r2:s[0],c2:s[1]};});drag=null;}
+function grid(){const g=Array.from({length:N},()=>Array(N).fill(-1));P.colors.forEach(({ci})=>{const r=rects[ci];if(!r)return;for(let rr=r.r1;rr<=r.r2;rr++)for(let cc=r.c1;cc<=r.c2;cc++)g[rr][cc]=ci;});return g;}
+function rectSize(r){return r?(r.r2-r.r1+1)*(r.c2-r.c1+1):0;}
+function distSq(r1,c1,r2,c2){return(r1-r2)**2+(c1-c2)**2;}
+function closestCorner(rect,r,c){const corners=[{name:'TL',r:rect.r1,c:rect.c1},{name:'TR',r:rect.r1,c:rect.c2},{name:'BL',r:rect.r2,c:rect.c1},{name:'BR',r:rect.r2,c:rect.c2}];let best=corners[0],minD=Infinity;for(const corn of corners){const d=distSq(r,c,corn.r,corn.c);if(d<minD){minD=d;best=corn;}}return best.name;}
+function moveCorner(ci,rect,corner,endR,endC){const seed=P.colors[ci].s;let r1=rect.r1,c1=rect.c1,r2=rect.r2,c2=rect.c2;if(corner==='TL'){r1=endR;c1=endC;}else if(corner==='TR'){r1=endR;c2=endC;}else if(corner==='BL'){r2=endR;c1=endC;}else if(corner==='BR'){r2=endR;c2=endC;}let nr1=Math.min(r1,r2),nc1=Math.min(c1,c2),nr2=Math.max(r1,r2),nc2=Math.max(c1,c2);nr1=Math.min(nr1,seed[0]);nc1=Math.min(nc1,seed[1]);nr2=Math.max(nr2,seed[0]);nc2=Math.max(nc2,seed[1]);nr1=Math.max(0,nr1);nc1=Math.max(0,nc1);nr2=Math.min(N-1,nr2);nc2=Math.min(N-1,nc2);return{r1:nr1,c1:nc1,r2:nr2,c2:nc2};}
+function overlapsOther(ci,cand){for(const{ci:oci}of P.colors){if(oci===ci)continue;const o=rects[oci];if(!o)continue;if(cand.r1<=o.r2&&cand.r2>=o.r1&&cand.c1<=o.c2&&cand.c2>=o.c1)return true;}return false;}
+function pxOf(n){return PAD+n*(CELL+GAP);}
+function drawRR(x,y,w,h,r,fill,stroke,lw){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}}
+function draw(){const W=PAD*2+N*CELL+(N-1)*GAP;cv.width=cv.height=W;drawRR(0,0,W,W,14,'#1a1a2e',null,0);const g=grid();let pRect=null,pCI=null,pOk=false;if(drag){pRect=drag.cand;pCI=drag.ci;pOk=drag.ok;}for(let r=0;r<N;r++){for(let c=0;c<N;c++){const x=pxOf(c),y=pxOf(r);const inPrev=pRect&&r>=pRect.r1&&r<=pRect.r2&&c>=pRect.c1&&c<=pRect.c2;let ci=g[r][c];if(pCI!==null&&ci===pCI&&!inPrev)ci=-1;if(inPrev&&pCI!==null){ctx.globalAlpha=pOk?0.8:0.3;drawRR(x,y,CELL,CELL,6,PALETTE[pCI].bg,PALETTE[pCI].border,1.5);ctx.globalAlpha=1;}else if(ci===-1){drawRR(x,y,CELL,CELL,6,'#2d2d44','#3a3a56',1);}else{drawRR(x,y,CELL,CELL,6,PALETTE[ci].bg,PALETTE[ci].border,1.5);}}}P.colors.forEach(({ci})=>{if(pCI===ci)return;const r=rects[ci];if(!r)return;const rx=pxOf(r.c1),ry=pxOf(r.r1);const rw=(r.c2-r.c1)*(CELL+GAP)+CELL,rh=(r.r2-r.r1)*(CELL+GAP)+CELL;drawRR(rx-2,ry-2,rw+4,rh+4,9,null,PALETTE[ci].border,3);});if(pRect&&pCI!==null){const rx=pxOf(pRect.c1),ry=pxOf(pRect.r1);const rw=(pRect.c2-pRect.c1)*(CELL+GAP)+CELL,rh=(pRect.r2-pRect.r1)*(CELL+GAP)+CELL;ctx.setLineDash([6,4]);drawRR(rx-2,ry-2,rw+4,rh+4,9,null,pOk?PALETTE[pCI].border:'#ff4444',3);ctx.setLineDash([]);}P.colors.forEach(({ci,n,s:[sr,sc]})=>{const x=pxOf(sc),y=pxOf(sr);const used=pCI===ci&&pRect?rectSize(pRect):rectSize(rects[ci]);ctx.fillStyle='rgba(255,255,255,0.22)';ctx.beginPath();ctx.arc(x+CELL/2,y+CELL/2,CELL*0.33,0,Math.PI*2);ctx.fill();ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`700 ${Math.round(CELL*0.34)}px system-ui`;ctx.shadowColor='rgba(0,0,0,0.6)';ctx.shadowBlur=4;ctx.fillStyle='#fff';ctx.fillText(n,x+CELL/2,y+CELL/2);ctx.shadowBlur=0;ctx.font='600 10px system-ui';ctx.fillStyle=used===n?'#7fff80':'rgba(255,255,255,0.5)';ctx.fillText(used,x+CELL-7,y+11);});updateCounters();}
+function updateCounters(){const el=document.getElementById('counters');el.innerHTML='';P.colors.forEach(({ci,n})=>{const used=rectSize(rects[ci]);const d=document.createElement('div');d.className='ct';d.style.background=PALETTE[ci].bg;d.style.color=PALETTE[ci].txt;d.style.opacity=used===n?'1':'0.5';d.textContent=`${used}/${n}`;el.appendChild(d);});}
+function getCell(e){const rect=cv.getBoundingClientRect();const sx=cv.width/rect.width,sy=cv.height/rect.height;let px2,py2;if(e.touches){px2=(e.touches[0].clientX-rect.left)*sx;py2=(e.touches[0].clientY-rect.top)*sy;}else{px2=(e.clientX-rect.left)*sx;py2=(e.clientY-rect.top)*sy;}const c=Math.floor((px2-PAD)/(CELL+GAP));const r=Math.floor((py2-PAD)/(CELL+GAP));if(r<0||r>=N||c<0||c>=N)return null;const cx=px2-PAD-c*(CELL+GAP),cy=py2-PAD-r*(CELL+GAP);if(cx>CELL||cy>CELL)return null;return[r,c];}
+function ciAt(r,c){for(const{ci,s}of P.colors)if(s[0]===r&&s[1]===c)return ci;return grid()[r][c];}
+function onDown(e){e.preventDefault();const cell=getCell(e);if(!cell)return;const[r,c]=cell;const ci=ciAt(r,c);if(ci===-1){setMsg('Click a colored cell to resize it.');return;}setMsg('');const corner=closestCorner(rects[ci],r,c);const cand=moveCorner(ci,rects[ci],corner,r,c);drag={ci,corner,cand,ok:!overlapsOther(ci,cand)};draw();}
+function onMove(e){e.preventDefault();if(!drag)return;const cell=getCell(e);if(!cell)return;drag.cand=moveCorner(drag.ci,rects[drag.ci],drag.corner,cell[0],cell[1]);drag.ok=!overlapsOther(drag.ci,drag.cand);draw();}
+function onUp(e){if(!drag)return;if(drag.ok){rects[drag.ci]=drag.cand;setMsg('');}else{setMsg("Overlaps another color — not saved.");}drag=null;draw();}
+function doCheck(){const g=grid();for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(g[r][c]===-1){setMsg('Fill every cell first!');return;}for(const{ci,n}of P.colors)if(rectSize(rects[ci])!==n){setMsg('A color count is wrong.');return;}setMsg('');document.getElementById('win').style.display='block';}
+function doReveal(){P.colors.forEach(({ci})=>{const cells=[];for(let r=0;r<N;r++)for(let c=0;c<N;c++)if(P.sol[r][c]===ci)cells.push([r,c]);if(cells.length)rects[ci]={r1:Math.min(...cells.map(([r])=>r)),c1:Math.min(...cells.map(([,c])=>c)),r2:Math.max(...cells.map(([r])=>r)),c2:Math.max(...cells.map(([,c])=>c))};});draw();setMsg('Solution shown.');}
+function clearAll(){init();draw();setMsg('');document.getElementById('win').style.display='none';}
+function newPuzzle(){P=PUZZLES[Math.floor(Math.random()*PUZZLES.length)];N=P.N;init();draw();setMsg('');document.getElementById('win').style.display='none';}
+function setMsg(t){document.getElementById('msg').textContent=t;}
+cv=document.getElementById('cv');ctx=cv.getContext('2d');
+cv.addEventListener('mousedown',onDown);cv.addEventListener('mousemove',onMove);cv.addEventListener('mouseup',onUp);cv.addEventListener('mouseleave',onUp);
+cv.addEventListener('touchstart',onDown,{passive:false});cv.addEventListener('touchmove',onMove,{passive:false});cv.addEventListener('touchend',onUp,{passive:false});
+newPuzzle();
+</script>
+</body>
+</html>
